@@ -38,7 +38,7 @@ func handleReadable(connFd int) {
 
 	data := append(pending[connFd], buf[:n]...)
 	for {
-		args, consumed, err := protocol.ParseCommand(data)
+		cmd, consumed, err := protocol.ParseCommand(data)
 		if err == protocol.ErrIncomplete {
 			break
 		}
@@ -48,10 +48,10 @@ func handleReadable(connFd int) {
 			return
 		}
 		data = data[consumed:]
-		if len(args) == 0 {
+		if cmd.Name == "" {
 			continue
 		}
-		reply := command.Handle(args)
+		reply := command.Handle(cmd)
 		if _, err := syscall.Write(connFd, reply); err != nil {
 			fmt.Println("write error:", err)
 			closeConn(connFd)
