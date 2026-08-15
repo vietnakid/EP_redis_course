@@ -51,7 +51,10 @@ func handleReadable(connFd int) {
 		if cmd.Name == "" {
 			continue
 		}
+
+		// handle that request
 		reply := command.Handle(cmd)
+
 		if _, err := syscall.Write(connFd, reply); err != nil {
 			fmt.Println("write error:", err)
 			closeConn(connFd)
@@ -134,9 +137,12 @@ func main() {
 				}
 				continue
 			}
+
+			// handle có event mới cho fd (có data mới hoặc có thể là fd đóng)
 			handleReadable(event.Fd)
 		}
 
+		// don't use time.sleep() here, because it is blocking function()
 		if time.Since(lastActiveExpire) >= activeExpireInterval {
 			command.ActiveExpireCycle()
 			lastActiveExpire = time.Now()

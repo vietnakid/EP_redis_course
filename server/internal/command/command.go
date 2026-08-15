@@ -252,6 +252,12 @@ func ActiveExpireCycle() {
 	now := time.Now()
 	for {
 		sampled, expired := 0, 0
+		// pick random sample of keys by loop over the map (map iteration order is random)
+		// map {a: 1, b: 2, c: 7, d: 9}
+		// for (a, b)
+		// for (b, c)
+		// for (c, d)
+		// for (d, a)
 		for key, e := range store {
 			if sampled >= activeExpireSampleSize {
 				break
