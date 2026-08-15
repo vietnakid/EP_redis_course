@@ -46,6 +46,12 @@ func Handle(args []string) []byte {
 	}
 	switch strings.ToUpper(args[0]) {
 	case "PING":
+		if len(args) > 2 {
+			return protocol.EncodeError("ERR wrong number of arguments for 'ping' command")
+		}
+		if len(args) == 2 {
+			return protocol.EncodeBulkString(args[1])
+		}
 		return protocol.EncodeSimpleString("PONG")
 	case "SET":
 		return handleSet(args)
@@ -124,4 +130,21 @@ func handleTTL(args []string, unit time.Duration) []byte {
 		remaining = 0
 	}
 	return protocol.EncodeInteger(int64((remaining + unit - 1) / unit))
+}
+
+// ActiveExpireCycle proactively evicts keys whose TTL has already elapsed,
+// so an idle key doesn't sit in memory forever just because nothing ever
+// GETs or TTLs it again. It is a plain function, not a goroutine: the
+// event loop in main.go calls it directly between multiplexer.Wait()
+// calls, so it runs on the very same single thread as every other command
+// - no extra locking model, no background sweeper to reason about.
+func ActiveExpireCycle() {
+	now := time.Now()
+	store.Lock()
+	for key, e := range store.data {
+		if e.hasExpiry && !now.Before(e.expireAt) {
+			delete(store.data, key)
+		}
+	}
+	store.Unlock()
 }

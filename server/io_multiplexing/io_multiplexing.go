@@ -18,6 +18,11 @@ type Event struct {
 
 type IOMultiplexer interface {
 	Monitor(event Event) error
-	Wait() ([]Event, error)
+	// Wait blocks for I/O readiness up to timeoutMs milliseconds (negative
+	// means block indefinitely). A timeout returns a nil/empty slice with a
+	// nil error - callers use that to run periodic, non-I/O work (like the
+	// active expiry sweep) on the same goroutine as the event loop, without
+	// spawning a background ticker.
+	Wait(timeoutMs int) ([]Event, error)
 	Close() error
 }

@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"syscall"
+	"time"
 
 	"redis_k2/server/internal/command"
 	"redis_k2/server/internal/protocol"
@@ -101,8 +102,14 @@ func main() {
 		return
 	}
 
+	// activeExpireInterval bounds multiplexer.Wait() so the loop wakes up
+	// on its own even when every connection is idle, and runs the active
+	// expiry sweep right here - same goroutine, same iteration, no ticker.
+	const activeExpireInterval = 100 * time.Millisecond
+	lastActiveExpire := time.Now()
+
 	for {
-		events, err := multiplexer.Wait()
+		events, err := multiplexer.Wait(int(activeExpireInterval / time.Millisecond))
 		if err != nil {
 			fmt.Println("wait error:", err)
 			continue
@@ -122,6 +129,11 @@ func main() {
 				continue
 			}
 			handleReadable(event.Fd)
+		}
+
+		if time.Since(lastActiveExpire) >= activeExpireInterval {
+			command.ActiveExpireCycle()
+			lastActiveExpire = time.Now()
 		}
 	}
 }
