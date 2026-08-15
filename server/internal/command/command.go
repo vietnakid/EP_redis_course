@@ -7,7 +7,6 @@ package command
 import (
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"redis_k2/server/internal/protocol"
@@ -21,20 +20,22 @@ type entry struct {
 	hasExpiry bool
 }
 
-var store = struct {
-	sync.Mutex
-	data map[string]entry
-}{data: make(map[string]entry)}
+// store is a plain package-level map, not wrapped in a mutex: Handle and
+// ActiveExpireCycle are only ever called from the single event-loop
+// goroutine in main.go (once per readable fd, once per sweep tick,
+// strictly sequential) - there is no second goroutine that could ever
+// race with this map, so a lock would protect against nothing.
+var store = make(map[string]entry)
 
 // getLive returns the entry for key, transparently dropping (and reporting
-// absent) anything that has already expired. Caller must hold store.Lock.
+// absent) anything that has already expired.
 func getLive(key string) (entry, bool) {
-	e, ok := store.data[key]
+	e, ok := store[key]
 	if !ok {
 		return entry{}, false
 	}
 	if e.hasExpiry && !time.Now().Before(e.expireAt) {
-		delete(store.data, key)
+		delete(store, key)
 		return entry{}, false
 	}
 	return e, true
@@ -63,9 +64,7 @@ func Handle(args []string) []byte {
 		if len(args) != 2 {
 			return protocol.EncodeError("ERR wrong number of arguments for 'GET'")
 		}
-		store.Lock()
 		e, ok := getLive(args[1])
-		store.Unlock()
 		if !ok {
 			return protocol.NilReply
 		}
@@ -103,9 +102,7 @@ func handleSet(args []string) []byte {
 		e.hasExpiry = true
 	}
 
-	store.Lock()
-	store.data[key] = e
-	store.Unlock()
+	store[key] = e
 	return protocol.EncodeSimpleString("OK")
 }
 
@@ -116,9 +113,7 @@ func handleTTL(args []string, unit time.Duration) []byte {
 	if len(args) != 2 {
 		return protocol.EncodeError("ERR wrong number of arguments for 'TTL'")
 	}
-	store.Lock()
 	e, ok := getLive(args[1])
-	store.Unlock()
 	if !ok {
 		return protocol.EncodeInteger(-2)
 	}
@@ -140,11 +135,9 @@ func handleTTL(args []string, unit time.Duration) []byte {
 // - no extra locking model, no background sweeper to reason about.
 func ActiveExpireCycle() {
 	now := time.Now()
-	store.Lock()
-	for key, e := range store.data {
+	for key, e := range store {
 		if e.hasExpiry && !now.Before(e.expireAt) {
-			delete(store.data, key)
+			delete(store, key)
 		}
 	}
-	store.Unlock()
 }

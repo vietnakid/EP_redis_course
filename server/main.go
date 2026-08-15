@@ -117,7 +117,7 @@ func main() {
 			if err == syscall.EINTR {
 				continue
 			}
-			fmt.Println("wait error:", err)
+			fmt.Println("wait error: ", err)
 			continue
 		}
 
