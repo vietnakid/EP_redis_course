@@ -111,6 +111,12 @@ func main() {
 	for {
 		events, err := multiplexer.Wait(int(activeExpireInterval / time.Millisecond))
 		if err != nil {
+			// EINTR: Go's runtime async-preempts a hot goroutine with SIGURG,
+			// which interrupts a blocked epoll_wait/kevent syscall. Benign
+			// under load (e.g. redis-benchmark) - just retry, don't log.
+			if err == syscall.EINTR {
+				continue
+			}
 			fmt.Println("wait error:", err)
 			continue
 		}
