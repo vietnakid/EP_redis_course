@@ -54,7 +54,7 @@ func Handle(args []string) []byte {
 	case "PTTL":
 		return handleTTL(args, time.Millisecond)
 	case "GET":
-		if len(args) < 2 {
+		if len(args) != 2 {
 			return protocol.EncodeError("ERR wrong number of arguments for 'GET'")
 		}
 		store.Lock()
