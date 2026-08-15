@@ -1,11 +1,15 @@
-// Lecture 2: bound the number of concurrent connection-handling goroutines
-// with a semaphore-backed pool, instead of spawning one unboundedly per
-// connection like lecture 1 does.
+// Lecture 3: speak real RESP and let a single connection send many
+// commands in a row, still on a semaphore-bounded thread pool.
 package main
 
 import (
+	"bufio"
 	"fmt"
+	"io"
 	"net"
+
+	"redis_k2/server/internal/command"
+	"redis_k2/server/internal/protocol"
 )
 
 type GoroutinePool struct {
@@ -22,15 +26,23 @@ func (g *GoroutinePool) Return() {
 
 func handleConnection(c net.Conn) {
 	defer c.Close()
-	buffer := make([]byte, 1024)
-	_, err := c.Read(buffer) // blocks until the client sends data
-	if err != nil {
-		fmt.Println("Error reading from connection:", err)
-		return
+	reader := bufio.NewReader(c)
+	for {
+		args, err := protocol.ReadCommand(reader)
+		if err != nil {
+			if err != io.EOF {
+				fmt.Println("read error:", err)
+			}
+			return
+		}
+		if len(args) == 0 {
+			continue
+		}
+		if _, err := c.Write(command.Handle(args)); err != nil {
+			fmt.Println("write error:", err)
+			return
+		}
 	}
-
-	fmt.Println(string(buffer))
-	c.Write([]byte("Hello from low-level TCP server!\n"))
 }
 
 func main() {
@@ -41,8 +53,9 @@ func main() {
 	}
 	fmt.Println("Server started on port 3000")
 
+	// sized to comfortably cover `redis-benchmark -c 500`
 	pool := &GoroutinePool{
-		semaphore: make(chan struct{}, 1), // pool size = 1: handlers run one at a time
+		semaphore: make(chan struct{}, 1024),
 	}
 
 	for {
@@ -51,7 +64,6 @@ func main() {
 			fmt.Println("Error accepting connection:", err)
 			continue
 		}
-		fmt.Println("Connection accepted from", conn.RemoteAddr())
 		pool.Get()
 		go func() {
 			defer pool.Return()
