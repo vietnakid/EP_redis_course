@@ -5,6 +5,7 @@
 package command
 
 import (
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -60,6 +61,12 @@ func Handle(cmd protocol.Command) []byte {
 		return handleTTL(cmd.Args, time.Second)
 	case "PTTL":
 		return handleTTL(cmd.Args, time.Millisecond)
+	case "EXPIRE":
+		return handleExpire(cmd.Args)
+	case "DEL":
+		return handleDel(cmd.Args)
+	case "EXISTS":
+		return handleExists(cmd.Args)
 	case "GET":
 		if len(cmd.Args) != 1 {
 			return protocol.EncodeError("ERR wrong number of arguments for 'GET'")
@@ -141,6 +148,78 @@ func handleTTL(args []string, unit time.Duration) []byte {
 		remaining = 0
 	}
 	return protocol.EncodeInteger(int64((remaining + unit - 1) / unit))
+}
+
+// maxExpireSeconds bounds EXPIRE's seconds argument so seconds*time.Second
+// cannot silently overflow int64 - anything past this is already an
+// unreachable expiration date, so it is rejected rather than wrapped.
+const maxExpireSeconds = math.MaxInt64 / int64(time.Second)
+
+// handleExpire implements EXPIRE key seconds. Returns 1 if the timeout was
+// set (or the key was deleted outright, per real Redis, when seconds is
+// zero or negative), 0 if the key does not exist. args is cmd.Args -
+// args[0] is the key, args[1] is the seconds.
+func handleExpire(args []string) []byte {
+	if len(args) != 2 {
+		return protocol.EncodeError("ERR wrong number of arguments for 'expire' command")
+	}
+	seconds, err := strconv.ParseInt(args[1], 10, 64)
+	if err != nil {
+		return protocol.EncodeError("ERR value is not an integer or out of range")
+	}
+	if seconds > maxExpireSeconds || seconds < -maxExpireSeconds {
+		return protocol.EncodeError("ERR invalid expire time in 'expire' command")
+	}
+	e, ok := getLive(args[0])
+	if !ok {
+		return protocol.EncodeInteger(0)
+	}
+	now := time.Now()
+	expireAt := now.Add(time.Duration(seconds) * time.Second)
+	if !expireAt.After(now) {
+		// A non-positive timeout means "expire right now": real Redis
+		// deletes the key immediately rather than storing a past
+		// expireAt for the next lazy/active sweep to find.
+		delete(store, args[0])
+		return protocol.EncodeInteger(1)
+	}
+	e.expireAt = expireAt
+	e.hasExpiry = true
+	store[args[0]] = e
+	return protocol.EncodeInteger(1)
+}
+
+// handleDel implements DEL key [key ...]. Returns the number of keys that
+// actually existed (and were therefore removed) - keys already absent or
+// already expired are not counted, matching real Redis. args is cmd.Args.
+func handleDel(args []string) []byte {
+	if len(args) < 1 {
+		return protocol.EncodeError("ERR wrong number of arguments for 'del' command")
+	}
+	var removed int64
+	for _, key := range args {
+		if _, ok := getLive(key); ok {
+			delete(store, key)
+			removed++
+		}
+	}
+	return protocol.EncodeInteger(removed)
+}
+
+// handleExists implements EXISTS key [key ...]. Returns how many of the
+// given keys exist; a key repeated in args is counted once per repeat, the
+// same as real Redis. args is cmd.Args.
+func handleExists(args []string) []byte {
+	if len(args) < 1 {
+		return protocol.EncodeError("ERR wrong number of arguments for 'exists' command")
+	}
+	var count int64
+	for _, key := range args {
+		if _, ok := getLive(key); ok {
+			count++
+		}
+	}
+	return protocol.EncodeInteger(count)
 }
 
 // activeExpireSampleSize and activeExpireThreshold mirror real Redis's
