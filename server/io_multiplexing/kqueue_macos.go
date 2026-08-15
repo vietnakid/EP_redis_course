@@ -5,6 +5,7 @@ package io_multiplexing
 import (
 	"log"
 	"syscall"
+	"time"
 )
 
 type KQueue struct {
@@ -34,8 +35,13 @@ func (kq *KQueue) Monitor(event Event) error {
 	return err
 }
 
-func (kq *KQueue) Wait() ([]Event, error) {
-	n, err := syscall.Kevent(kq.fd, nil, kq.kqEvents, nil)
+func (kq *KQueue) Wait(timeoutMs int) ([]Event, error) {
+	var timeout *syscall.Timespec
+	if timeoutMs >= 0 {
+		ts := syscall.NsecToTimespec(int64(timeoutMs) * int64(time.Millisecond))
+		timeout = &ts
+	}
+	n, err := syscall.Kevent(kq.fd, nil, kq.kqEvents, timeout)
 	if err != nil {
 		return nil, err
 	}
