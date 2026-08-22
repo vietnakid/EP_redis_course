@@ -1,7 +1,6 @@
-// Lecture 5: same single-threaded epoll/kqueue event loop as lecture 4, but
-// now speaking a complete-enough RESP protocol - SET with EX/PX expiration,
-// TTL/PTTL, and commands that straddle multiple read() calls are correctly
-// reassembled instead of dropped.
+// Lecture 6: same single-threaded epoll/kqueue event loop as lecture 5, now
+// with a simple set and a sorted set (backed by a skip list or a B+ tree,
+// selected via ZSET_IMPL) alongside the existing string keyspace.
 package main
 
 import (
@@ -12,6 +11,7 @@ import (
 	"time"
 
 	"redis_k2/server/internal/command"
+	"redis_k2/server/internal/datastructure"
 	"redis_k2/server/internal/protocol"
 	"redis_k2/server/io_multiplexing"
 )
@@ -144,7 +144,7 @@ func main() {
 
 		// don't use time.sleep() here, because it is blocking function()
 		if time.Since(lastActiveExpire) >= activeExpireInterval {
-			command.ActiveExpireCycle()
+			datastructure.ActiveExpireCycle()
 			lastActiveExpire = time.Now()
 		}
 	}
