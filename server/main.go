@@ -1,6 +1,10 @@
-// Lecture 6: same single-threaded epoll/kqueue event loop as lecture 5, now
-// with a simple set and a sorted set (backed by a skip list or a B+ tree,
-// selected via ZSET_IMPL) alongside the existing string keyspace.
+// Lecture 7: same single-threaded epoll/kqueue event loop as lecture 6, now
+// with two probabilistic structures alongside the exact ones - a Bloom
+// filter (BF.RESERVE/BF.MADD/BF.EXISTS) that answers set membership in a
+// fixed bit array, and a Count-Min Sketch (CMS.INITBYDIM/CMS.INITBYPROB/
+// CMS.INCRBY/CMS.QUERY/CMS.INFO) that estimates frequencies in a fixed
+// counter grid. Both trade exactness for memory that never grows with the
+// number of items stored.
 package main
 
 import (
