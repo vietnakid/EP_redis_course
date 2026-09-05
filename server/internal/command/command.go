@@ -3,11 +3,13 @@
 // goroutines, or event loops, so any I/O strategy (thread pool,
 // single-threaded, io-multiplexed) can call Handle the same way.
 //
-// Handle routes a parsed protocol.Command to one of three handler files
+// Handle routes a parsed protocol.Command to one of five handler files
 // split by the keyspace it touches: command_map.go (plain strings -
 // SET/GET/TTL/EXPIRE/DEL/EXISTS), command_set.go (SADD/SREM/SISMEMBER/
-// SMEMBERS), command_sortedset.go (ZADD/ZSCORE/ZRANK). Each handler talks
-// to its keyspace only through internal/datastructure - this file and its
+// SMEMBERS), command_sortedset.go (ZADD/ZSCORE/ZRANK), command_bloom.go
+// (BF.RESERVE/BF.MADD/BF.EXISTS) and command_cms.go (CMS.INITBYDIM/
+// CMS.INITBYPROB/CMS.INCRBY/CMS.QUERY/CMS.INFO). Each handler talks to
+// its keyspace only through internal/datastructure - this file and its
 // siblings never touch a store map directly except through it.
 package command
 
@@ -74,6 +76,22 @@ func Handle(cmd protocol.Command) []byte {
 		return handleZScore(cmd.Args)
 	case "ZRANK":
 		return handleZRank(cmd.Args)
+	case "BF.RESERVE":
+		return handleBFReserve(cmd.Args)
+	case "BF.MADD":
+		return handleBFMAdd(cmd.Args)
+	case "BF.EXISTS":
+		return handleBFExists(cmd.Args)
+	case "CMS.INITBYDIM":
+		return handleCMSInitByDim(cmd.Args)
+	case "CMS.INITBYPROB":
+		return handleCMSInitByProb(cmd.Args)
+	case "CMS.INCRBY":
+		return handleCMSIncrBy(cmd.Args)
+	case "CMS.QUERY":
+		return handleCMSQuery(cmd.Args)
+	case "CMS.INFO":
+		return handleCMSInfo(cmd.Args)
 	default:
 		return protocol.EncodeError("ERR unknown command")
 	}
