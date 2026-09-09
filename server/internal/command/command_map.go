@@ -60,7 +60,7 @@ func handleSet(args []string) []byte {
 	// SET always overwrites whatever type the key held before - clear out
 	// any stale set/sorted-set left behind by an earlier SADD/ZADD.
 	datastructure.ReplaceKind(key, datastructure.KindString)
-	datastructure.StringStore[key] = e
+	datastructure.SetString(key, e)
 	return protocol.EncodeSimpleString("OK")
 }
 
@@ -130,7 +130,7 @@ func handleExpire(args []string) []byte {
 		// A non-positive timeout means "expire right now": real Redis
 		// deletes the key immediately rather than storing a past
 		// expireAt for the next lazy/active sweep to find.
-		delete(datastructure.StringStore, args[0])
+		datastructure.Delete(args[0])
 		return protocol.EncodeInteger(1)
 	}
 	e.ExpireAt = expireAt
