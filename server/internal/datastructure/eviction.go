@@ -112,29 +112,54 @@ func evictRandom() {
 }
 
 // evictionCandidate and ePool implement the sampled-LRU pool: a small
-// slice kept sorted oldest-first, refreshed with a few random keys on every
-// eviction pass. See the package doc comment above for why this is a good
-// approximation without tracking every key's recency.
+// slice kept sorted stalest-first, refreshed with a few freshly sampled
+// keys on every eviction pass. See the package doc comment above for why
+// this is a good approximation without tracking every key's recency.
+//
+// idle is a frozen snapshot - computed once, as `sampleTime -
+// LastAccessTime`, at the moment a key is (re)sampled into the pool - and
+// then left alone. It is deliberately NOT recomputed against a later "now"
+// just because real time keeps passing while the key sits in the pool.
+//
+// This matters because of a specific staleness case: say keyA is accessed
+// at t=5 and gets sampled into the pool at t=6 (idle=1). If keyA is
+// accessed again at t=10 but never happens to get resampled before the
+// next eviction decision, the pool entry still shows idle=1 from the t=6
+// snapshot, not "now - 10". keyA can therefore look far more evictable
+// than it actually is, right up until populateEPool happens to resample it
+// again and overwrite the entry with a fresh idle.
+//
+// This is not a bug to patch over by recomputing idle from a live
+// timestamp on every check - it is the real approximation Redis's sampled
+// LRU makes, and exactly why the policy is called *approximate* LRU: a key
+// can, in rare cases, be evicted shortly after being touched if it's
+// unlucky enough to sit in the pool with a stale snapshot that never gets
+// refreshed. Removing that possibility entirely means tracking every key's
+// recency all the time, which is exactly what evictExactLRU does instead,
+// at higher bookkeeping cost.
 type evictionCandidate struct {
-	key            string
-	lastAccessTime time.Time
+	key  string
+	idle time.Duration
 }
 
 var ePool []evictionCandidate
 
+// sortEPool orders the pool stalest-first: index 0 has the largest idle
+// (the oldest snapshot), so it's the next eviction victim.
 func sortEPool() {
 	sort.Slice(ePool, func(i, j int) bool {
-		return ePool[i].lastAccessTime.Before(ePool[j].lastAccessTime)
+		return ePool[i].idle > ePool[j].idle
 	})
 }
 
 // populateEPool folds up to EpoolSampleSize freshly sampled keys into the
 // pool, keeping it sorted and capped at EpoolMaxSize (dropping the
-// most-recently-used entries first - they're the least likely victims).
+// freshest entries first - they're the least likely victims).
 func populateEPool() {
+	now := time.Now()
 	remaining := EpoolSampleSize
 	for k, e := range StringStore {
-		pushToEPool(k, e.LastAccessTime)
+		pushToEPool(k, now.Sub(e.LastAccessTime))
 		remaining--
 		if remaining <= 0 {
 			break
@@ -142,15 +167,18 @@ func populateEPool() {
 	}
 }
 
-func pushToEPool(key string, lastAccessTime time.Time) {
+// pushToEPool records idle for key, overwriting any snapshot already in
+// the pool for that same key. Resampling is the only thing that ever
+// refreshes an entry - see the idle field's doc comment above.
+func pushToEPool(key string, idle time.Duration) {
 	for i, c := range ePool {
 		if c.key == key {
-			ePool[i].lastAccessTime = lastAccessTime
+			ePool[i].idle = idle
 			sortEPool()
 			return
 		}
 	}
-	ePool = append(ePool, evictionCandidate{key: key, lastAccessTime: lastAccessTime})
+	ePool = append(ePool, evictionCandidate{key: key, idle: idle})
 	sortEPool()
 	if len(ePool) > EpoolMaxSize {
 		ePool = ePool[:EpoolMaxSize]

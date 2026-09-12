@@ -1,6 +1,9 @@
 package datastructure
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 // withEviction resets the string keyspace and eviction state, and installs
 // small MaxKeyNumber/EvictionRatio so a handful of keys is enough to
@@ -89,6 +92,31 @@ func TestEvictionUpdatesEvictedKeysStat(t *testing.T) {
 
 	if EvictedKeys != 2 {
 		t.Errorf("expected EvictedKeys to be 2, got %d", EvictedKeys)
+	}
+}
+
+// TestSampledLRUPoolIdleIsFrozenSnapshot pins down the staleness behavior
+// documented on evictionCandidate: a pool entry's idle is a snapshot taken
+// when the key was (re)sampled, and must NOT silently grow just because
+// real time passes while it sits in the pool untouched. Only an explicit
+// resample (another pushToEPool call for the same key) may update it -
+// mirroring real Redis, and the reason this policy is "approximate": a key
+// re-accessed after being sampled can still look stale in the pool until
+// it happens to be resampled again.
+func TestSampledLRUPoolIdleIsFrozenSnapshot(t *testing.T) {
+	ePool = nil
+
+	pushToEPool("keyA", 1*time.Second)
+	frozen := ePool[0].idle
+
+	time.Sleep(5 * time.Millisecond)
+	if ePool[0].idle != frozen {
+		t.Fatalf("idle changed with no resample: got %v, want frozen %v", ePool[0].idle, frozen)
+	}
+
+	pushToEPool("keyA", 10*time.Millisecond)
+	if ePool[0].idle != 10*time.Millisecond {
+		t.Fatalf("resample did not refresh idle: got %v, want 10ms", ePool[0].idle)
 	}
 }
 
