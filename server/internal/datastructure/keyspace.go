@@ -53,6 +53,7 @@ func Delete(key string) bool {
 	switch KindOf(key) {
 	case KindString:
 		delete(StringStore, key)
+		lruRemove(key)
 	case KindSet:
 		delete(SetStore, key)
 	case KindZSet:
@@ -74,6 +75,7 @@ func Delete(key string) bool {
 func ReplaceKind(key string, keep Kind) {
 	if keep != KindString {
 		delete(StringStore, key)
+		lruRemove(key)
 	}
 	if keep != KindSet {
 		delete(SetStore, key)

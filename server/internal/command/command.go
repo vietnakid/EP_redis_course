@@ -3,14 +3,16 @@
 // goroutines, or event loops, so any I/O strategy (thread pool,
 // single-threaded, io-multiplexed) can call Handle the same way.
 //
-// Handle routes a parsed protocol.Command to one of five handler files
+// Handle routes a parsed protocol.Command to one of six handler files
 // split by the keyspace it touches: command_map.go (plain strings -
-// SET/GET/TTL/EXPIRE/DEL/EXISTS), command_set.go (SADD/SREM/SISMEMBER/
+// SET/GET/TTL/EXPIRE/DEL/EXISTS, and the only keyspace eviction acts on -
+// see datastructure/eviction.go), command_set.go (SADD/SREM/SISMEMBER/
 // SMEMBERS), command_sortedset.go (ZADD/ZSCORE/ZRANK), command_bloom.go
-// (BF.RESERVE/BF.MADD/BF.EXISTS) and command_cms.go (CMS.INITBYDIM/
-// CMS.INITBYPROB/CMS.INCRBY/CMS.QUERY/CMS.INFO). Each handler talks to
-// its keyspace only through internal/datastructure - this file and its
-// siblings never touch a store map directly except through it.
+// (BF.RESERVE/BF.MADD/BF.EXISTS), command_cms.go (CMS.INITBYDIM/
+// CMS.INITBYPROB/CMS.INCRBY/CMS.QUERY/CMS.INFO) and command_info.go
+// (INFO, spanning every keyspace). Each handler talks to its keyspace only
+// through internal/datastructure - this file and its siblings never touch
+// a store map directly except through it.
 package command
 
 import (
@@ -48,6 +50,8 @@ func Handle(cmd protocol.Command) []byte {
 			return protocol.EncodeBulkString(cmd.Args[0])
 		}
 		return protocol.EncodeSimpleString("PONG")
+	case "INFO":
+		return handleInfo(cmd.Args)
 	case "SET":
 		return handleSet(cmd.Args)
 	case "GET":

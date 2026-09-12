@@ -3,11 +3,13 @@ package datastructure
 import "time"
 
 // StringEntry is a stored string value plus its optional expiration.
-// HasExpiry == false means the key never expires.
+// HasExpiry == false means the key never expires. LastAccessTime feeds the
+// LRU eviction policies in eviction.go/lru_list.go.
 type StringEntry struct {
-	Value     string
-	ExpireAt  time.Time
-	HasExpiry bool
+	Value          string
+	ExpireAt       time.Time
+	HasExpiry      bool
+	LastAccessTime time.Time
 }
 
 // StringStore holds every key whose value is a plain string. It is a
@@ -15,6 +17,18 @@ type StringEntry struct {
 // package is only ever touched from the single event-loop goroutine in
 // main.go, so a lock would protect against nothing.
 var StringStore = make(map[string]StringEntry)
+
+// SetString is the only path that writes StringStore: it triggers eviction
+// first if the store is full and key is new, then stamps LastAccessTime and
+// records the write in the exact-LRU list, regardless of which policy is
+// currently active - so switching ActiveEvictionPolicy at runtime doesn't
+// need a rebuild of that list.
+func SetString(key string, e StringEntry) {
+	maybeEvict(key)
+	e.LastAccessTime = time.Now()
+	StringStore[key] = e
+	lruTouch(key)
+}
 
 // GetLiveString returns the entry for key, transparently dropping (and
 // reporting absent) anything that has already expired.
@@ -25,8 +39,12 @@ func GetLiveString(key string) (StringEntry, bool) {
 	}
 	if e.HasExpiry && !time.Now().Before(e.ExpireAt) {
 		delete(StringStore, key)
+		lruRemove(key)
 		return StringEntry{}, false
 	}
+	e.LastAccessTime = time.Now()
+	StringStore[key] = e
+	lruTouch(key)
 	return e, true
 }
 
@@ -64,6 +82,7 @@ func ActiveExpireCycle() {
 			sampled++
 			if e.HasExpiry && !now.Before(e.ExpireAt) {
 				delete(StringStore, key)
+				lruRemove(key)
 				expired++
 			}
 		}
