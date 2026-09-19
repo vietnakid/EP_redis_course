@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
+	"os/signal"
 	"syscall"
 	"time"
 
@@ -24,6 +26,10 @@ import (
 // yet parsed into a full command. Only the single event-loop goroutine ever
 // touches this map, so it needs no locking.
 var pending = make(map[int][]byte)
+
+// connFds tracks every currently-open client fd, purely so a graceful
+// shutdown can close them all. Same single-goroutine ownership as pending.
+var connFds = make(map[int]struct{})
 
 // handleReadable is called once per read-ready event on connFd. It appends
 // this read's bytes to whatever was left over from the previous event, then
@@ -78,6 +84,7 @@ func handleReadable(connFd int) {
 func closeConn(connFd int) {
 	_ = syscall.Close(connFd)
 	delete(pending, connFd)
+	delete(connFds, connFd)
 }
 
 func main() {
@@ -115,7 +122,29 @@ func main() {
 	const activeExpireInterval = 100 * time.Millisecond
 	lastActiveExpire := time.Now()
 
+	// SIGINT/SIGTERM just need to reach this one goroutine - the event loop
+	// already wakes up every activeExpireInterval (see Wait's timeout
+	// below), so checking a channel non-blockingly at the top of each
+	// iteration bounds shutdown latency to that same ~100ms without a
+	// ticker, a busy-loop, or any cross-goroutine state machine. Unlike a
+	// multi-goroutine server, this loop is the only thing touching pending/
+	// connFds/the multiplexer, so there's no "wait until idle" handshake to
+	// get right - the signal is simply observed between two iterations that
+	// were already going to happen.
+	shutdown := make(chan os.Signal, 1)
+	signal.Notify(shutdown, syscall.SIGINT, syscall.SIGTERM)
+
 	for {
+		select {
+		case sig := <-shutdown:
+			fmt.Println("received", sig, "- shutting down")
+			for fd := range connFds {
+				closeConn(fd)
+			}
+			return
+		default:
+		}
+
 		events, err := multiplexer.Wait(int(activeExpireInterval / time.Millisecond))
 		if err != nil {
 			// EINTR: Go's runtime async-preempts a hot goroutine with SIGURG,
@@ -138,7 +167,9 @@ func main() {
 				if err := multiplexer.Monitor(io_multiplexing.Event{Fd: connFd, Op: io_multiplexing.OpRead}); err != nil {
 					fmt.Println("failed to monitor conn fd:", err)
 					_ = syscall.Close(connFd)
+					continue
 				}
+				connFds[connFd] = struct{}{}
 				continue
 			}
 
