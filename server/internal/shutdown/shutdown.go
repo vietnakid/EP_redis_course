@@ -5,8 +5,8 @@
 package shutdown
 
 import (
-	"fmt"
 	"io"
+	"log"
 	"os"
 	"os/signal"
 	"syscall"
@@ -18,6 +18,6 @@ func WaitAndClose(c io.Closer) {
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 	sig := <-sigs
-	fmt.Println("received", sig, "- shutting down")
+	log.Println("received", sig, "- shutting down")
 	_ = c.Close()
 }

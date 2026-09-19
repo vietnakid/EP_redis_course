@@ -7,23 +7,27 @@
 package main
 
 import (
-	"fmt"
+	"log"
 
 	"redis_k2/server/internal/server"
 	"redis_k2/server/internal/shutdown"
 )
 
 func main() {
+	// Ldate|Ltime|Lmicroseconds for a real timestamp, Lshortfile so every
+	// log line names the file:line it came from - stdlib covers both, no
+	// logging library needed for a teaching server.
+	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds | log.Lshortfile)
+
 	srv, err := server.New(":3000")
 	if err != nil {
-		fmt.Println(err)
-		return
+		log.Fatal(err)
 	}
-	fmt.Println("Server started on port 3000")
+	log.Println("Server started on port 3000")
 
 	go shutdown.WaitAndClose(srv)
 
 	if err := srv.Run(); err != nil {
-		fmt.Println(err)
+		log.Println(err)
 	}
 }

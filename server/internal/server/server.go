@@ -6,6 +6,7 @@ package server
 
 import (
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"sync"
@@ -99,7 +100,7 @@ func (s *Server) Run() error {
 		events, err := s.mp.Wait(int(activeExpireInterval / time.Millisecond))
 		if err != nil {
 			if s.closed.Load() {
-				fmt.Println("shutting down")
+				log.Println("shutting down")
 				s.closeAllConns()
 				return nil
 			}
@@ -110,7 +111,7 @@ func (s *Server) Run() error {
 			if err == syscall.EINTR {
 				continue
 			}
-			fmt.Println("wait error:", err)
+			log.Println("wait error:", err)
 			continue
 		}
 
@@ -134,19 +135,19 @@ func (s *Server) acceptConn() {
 	connFd, sa, err := syscall.Accept(s.listenerFd)
 	if err != nil {
 		if !s.closed.Load() {
-			fmt.Println("accept error:", err)
+			log.Println("accept error:", err)
 		}
 		return
 	}
 	addr := sockaddrString(sa)
 	if err := s.mp.Monitor(io_multiplexing.Event{Fd: connFd, Op: io_multiplexing.OpRead}); err != nil {
-		fmt.Println("failed to monitor conn fd:", err)
+		log.Println("failed to monitor conn fd:", err)
 		_ = syscall.Close(connFd)
 		return
 	}
 	s.connFds[connFd] = struct{}{}
 	s.remoteAddr[connFd] = addr
-	fmt.Printf("accepted fd=%d from %s\n", connFd, addr)
+	log.Printf("accepted fd=%d from %s", connFd, addr)
 }
 
 // sockaddrString formats a syscall.Sockaddr as "ip:port" for logging. A

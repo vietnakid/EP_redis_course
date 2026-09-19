@@ -1,8 +1,8 @@
 package server
 
 import (
-	"fmt"
 	"io"
+	"log"
 	"syscall"
 
 	"redis_k2/server/internal/command"
@@ -18,7 +18,7 @@ func (s *Server) handleReadable(connFd int) {
 	n, err := syscall.Read(connFd, buf)
 	if err != nil || n == 0 {
 		if err != nil && err != io.EOF {
-			fmt.Println("read error:", err)
+			log.Println("read error:", err)
 		}
 		s.closeConn(connFd)
 		return
@@ -31,7 +31,7 @@ func (s *Server) handleReadable(connFd int) {
 			break
 		}
 		if err != nil {
-			fmt.Println("protocol error:", err)
+			log.Println("protocol error:", err)
 			s.closeConn(connFd)
 			return
 		}
@@ -44,7 +44,7 @@ func (s *Server) handleReadable(connFd int) {
 		reply := command.Handle(cmd)
 
 		if _, err := syscall.Write(connFd, reply); err != nil {
-			fmt.Println("write error:", err)
+			log.Println("write error:", err)
 			s.closeConn(connFd)
 			return
 		}
@@ -60,7 +60,7 @@ func (s *Server) handleReadable(connFd int) {
 }
 
 func (s *Server) closeConn(connFd int) {
-	fmt.Printf("closing fd=%d addr=%s\n", connFd, s.remoteAddr[connFd])
+	log.Printf("closing fd=%d addr=%s", connFd, s.remoteAddr[connFd])
 	_ = syscall.Close(connFd)
 	delete(s.pending, connFd)
 	delete(s.connFds, connFd)
