@@ -8,6 +8,7 @@ package main
 
 import (
 	"log"
+	"os"
 
 	"redis_k2/server/internal/server"
 	"redis_k2/server/internal/shutdown"
@@ -23,7 +24,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Println("Server started on port 3000")
+	log.Printf("Server started on port 3000, pid=%d", os.Getpid())
 
 	go shutdown.WaitAndClose(srv)
 
