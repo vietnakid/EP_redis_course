@@ -4,8 +4,14 @@ import (
 	"strings"
 	"testing"
 
+	"redis_k2/server/internal/datastructure"
 	"redis_k2/server/internal/protocol"
 )
+
+// testStore is shared across every test in this file, same as the single
+// package-level store every test implicitly shared before the Store
+// refactor - each test still uses its own key prefix, so nothing collides.
+var testStore = datastructure.NewStore()
 
 // handle parses and runs one RESP command line, e.g. "SADD myset a b".
 func handle(t *testing.T, line string) string {
@@ -15,7 +21,7 @@ func handle(t *testing.T, line string) string {
 		t.Fatalf("empty command line")
 	}
 	cmd := protocol.Command{Name: fields[0], Args: fields[1:]}
-	return string(Handle(cmd))
+	return string(Handle(testStore, cmd))
 }
 
 func TestSetCommands(t *testing.T) {

@@ -10,66 +10,61 @@ type lruNode struct {
 	prev, next *lruNode
 }
 
-var (
-	lruHead, lruTail *lruNode
-	lruNodes         = make(map[string]*lruNode)
-)
-
-func lruUnlink(n *lruNode) {
+func (s *Store) lruUnlink(n *lruNode) {
 	if n.prev != nil {
 		n.prev.next = n.next
 	} else {
-		lruHead = n.next
+		s.lruHead = n.next
 	}
 	if n.next != nil {
 		n.next.prev = n.prev
 	} else {
-		lruTail = n.prev
+		s.lruTail = n.prev
 	}
 	n.prev, n.next = nil, nil
 }
 
-func lruPushFront(n *lruNode) {
-	n.next = lruHead
-	if lruHead != nil {
-		lruHead.prev = n
+func (s *Store) lruPushFront(n *lruNode) {
+	n.next = s.lruHead
+	if s.lruHead != nil {
+		s.lruHead.prev = n
 	}
-	lruHead = n
-	if lruTail == nil {
-		lruTail = n
+	s.lruHead = n
+	if s.lruTail == nil {
+		s.lruTail = n
 	}
 }
 
 // lruTouch marks key as the most recently used entry, creating it if unseen.
-func lruTouch(key string) {
-	if n, ok := lruNodes[key]; ok {
-		if n == lruHead {
+func (s *Store) lruTouch(key string) {
+	if n, ok := s.lruNodes[key]; ok {
+		if n == s.lruHead {
 			return
 		}
-		lruUnlink(n)
-		lruPushFront(n)
+		s.lruUnlink(n)
+		s.lruPushFront(n)
 		return
 	}
 	n := &lruNode{key: key}
-	lruNodes[key] = n
-	lruPushFront(n)
+	s.lruNodes[key] = n
+	s.lruPushFront(n)
 }
 
 // lruRemove drops a key from recency tracking (called on any StringStore
 // delete: DEL, expiry, or eviction itself).
-func lruRemove(key string) {
-	n, ok := lruNodes[key]
+func (s *Store) lruRemove(key string) {
+	n, ok := s.lruNodes[key]
 	if !ok {
 		return
 	}
-	lruUnlink(n)
-	delete(lruNodes, key)
+	s.lruUnlink(n)
+	delete(s.lruNodes, key)
 }
 
 // lruVictim returns the least recently used key without removing it.
-func lruVictim() (string, bool) {
-	if lruTail == nil {
+func (s *Store) lruVictim() (string, bool) {
+	if s.lruTail == nil {
 		return "", false
 	}
-	return lruTail.key, true
+	return s.lruTail.key, true
 }

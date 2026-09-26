@@ -39,6 +39,11 @@ type Server struct {
 	// teaching aid so a close log line reads as more than a bare number.
 	remoteAddr map[int]string
 
+	// store is this Server's own keyspace - single-threaded, so one Store
+	// is all it ever needs (contrast the shared-nothing engine, where each
+	// Worker gets its own).
+	store *datastructure.Store
+
 	closed atomic.Bool
 	once   sync.Once
 }
@@ -73,6 +78,7 @@ func New(addr string) (*Server, error) {
 		pending:      make(map[int][]byte),
 		connFds:      make(map[int]struct{}),
 		remoteAddr:   make(map[int]string),
+		store:        datastructure.NewStore(),
 	}, nil
 }
 
@@ -125,7 +131,7 @@ func (s *Server) Run() error {
 
 		// don't use time.sleep() here, because it is a blocking function
 		if time.Since(lastActiveExpire) >= activeExpireInterval {
-			datastructure.ActiveExpireCycle()
+			s.store.ActiveExpireCycle()
 			lastActiveExpire = time.Now()
 		}
 	}

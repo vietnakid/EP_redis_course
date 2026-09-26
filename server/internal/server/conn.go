@@ -41,7 +41,7 @@ func (s *Server) handleReadable(connFd int) {
 		}
 
 		// handle that request
-		reply := command.Handle(cmd)
+		reply := command.Handle(s.store, cmd)
 
 		if _, err := syscall.Write(connFd, reply); err != nil {
 			log.Println("write error:", err)

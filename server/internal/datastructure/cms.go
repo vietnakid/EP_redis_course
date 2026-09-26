@@ -26,9 +26,6 @@ import (
 // log10PointFive is log10(0.5), precomputed for CalcCMSDim's depth term.
 const log10PointFive = -0.30102999566
 
-// CMSStore holds every key whose value is a Count-Min Sketch.
-var CMSStore = make(map[string]*CMS)
-
 // CMS is one sketch. counter is [depth][width]: one row per hash
 // function, one column per bucket.
 type CMS struct {

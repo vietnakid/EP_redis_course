@@ -2,8 +2,8 @@
 // (StringStore). Sets/sorted sets/Bloom/CMS are demonstration structures
 // for their own lectures, not the "hot" keyspace under memory pressure, so
 // - matching real Redis's allkeys-* vs volatile-* split in spirit, but kept
-// to a single store for a teachable, single-threaded example - eviction
-// only ever looks at StringStore.
+// to a single store for a teachable example - eviction only ever looks at
+// StringStore.
 //
 // Three interchangeable policies pick the victim once StringStore hits
 // MaxKeyNumber:
@@ -24,14 +24,6 @@ package datastructure
 import (
 	"sort"
 	"time"
-)
-
-// MaxKeyNumber and EvictionRatio are vars, not consts, so tests (and a
-// future config file) can dial them down instead of inserting a million
-// keys to exercise eviction.
-var (
-	MaxKeyNumber  = 1000000
-	EvictionRatio = 0.1
 )
 
 // EpoolMaxSize bounds the sampled-LRU pool; EpoolSampleSize is how many
@@ -63,47 +55,39 @@ func (p EvictionPolicy) String() string {
 	}
 }
 
-// ActiveEvictionPolicy selects which victim-picking strategy SetString
-// triggers once StringStore is full.
-var ActiveEvictionPolicy = EvictionPolicyLRU
-
-// EvictedKeys counts every key evicted so far, exposed via INFO's Stats
-// section so eviction is observable at runtime instead of only in logs.
-var EvictedKeys int64
-
 // maybeEvict runs before inserting incomingKey. Overwriting an existing key
 // never grows the store, so only a genuinely new key can trigger eviction.
-func maybeEvict(incomingKey string) {
-	if _, exists := StringStore[incomingKey]; exists {
+func (s *Store) maybeEvict(incomingKey string) {
+	if _, exists := s.StringStore[incomingKey]; exists {
 		return
 	}
-	if len(StringStore) < MaxKeyNumber {
+	if len(s.StringStore) < s.MaxKeyNumber {
 		return
 	}
-	switch ActiveEvictionPolicy {
+	switch s.ActiveEvictionPolicy {
 	case EvictionPolicyRandom:
-		evictRandom()
+		s.evictRandom()
 	case EvictionPolicyLRU:
-		evictSampledLRU()
+		s.evictSampledLRU()
 	case EvictionPolicyLRUExact:
-		evictExactLRU()
+		s.evictExactLRU()
 	}
 }
 
-func victimCount() int {
-	return int(EvictionRatio * float64(MaxKeyNumber))
+func (s *Store) victimCount() int {
+	return int(s.EvictionRatio * float64(s.MaxKeyNumber))
 }
 
-func deleteEvicted(key string) {
-	delete(StringStore, key)
-	lruRemove(key)
-	EvictedKeys++
+func (s *Store) deleteEvicted(key string) {
+	delete(s.StringStore, key)
+	s.lruRemove(key)
+	s.EvictedKeys++
 }
 
-func evictRandom() {
-	remaining := victimCount()
-	for k := range StringStore {
-		deleteEvicted(k)
+func (s *Store) evictRandom() {
+	remaining := s.victimCount()
+	for k := range s.StringStore {
+		s.deleteEvicted(k)
 		remaining--
 		if remaining <= 0 {
 			break
@@ -111,7 +95,7 @@ func evictRandom() {
 	}
 }
 
-// evictionCandidate and ePool implement the sampled-LRU pool: a small
+// evictionCandidate and Store.ePool implement the sampled-LRU pool: a small
 // slice kept sorted stalest-first, refreshed with a few freshly sampled
 // keys on every eviction pass. See the package doc comment above for why
 // this is a good approximation without tracking every key's recency.
@@ -142,24 +126,22 @@ type evictionCandidate struct {
 	idle time.Duration
 }
 
-var ePool []evictionCandidate
-
 // sortEPool orders the pool stalest-first: index 0 has the largest idle
 // (the oldest snapshot), so it's the next eviction victim.
-func sortEPool() {
-	sort.Slice(ePool, func(i, j int) bool {
-		return ePool[i].idle > ePool[j].idle
+func (s *Store) sortEPool() {
+	sort.Slice(s.ePool, func(i, j int) bool {
+		return s.ePool[i].idle > s.ePool[j].idle
 	})
 }
 
 // populateEPool folds up to EpoolSampleSize freshly sampled keys into the
 // pool, keeping it sorted and capped at EpoolMaxSize (dropping the
 // freshest entries first - they're the least likely victims).
-func populateEPool() {
+func (s *Store) populateEPool() {
 	now := time.Now()
 	remaining := EpoolSampleSize
-	for k, e := range StringStore {
-		pushToEPool(k, now.Sub(e.LastAccessTime))
+	for k, e := range s.StringStore {
+		s.pushToEPool(k, now.Sub(e.LastAccessTime))
 		remaining--
 		if remaining <= 0 {
 			break
@@ -170,40 +152,40 @@ func populateEPool() {
 // pushToEPool records idle for key, overwriting any snapshot already in
 // the pool for that same key. Resampling is the only thing that ever
 // refreshes an entry - see the idle field's doc comment above.
-func pushToEPool(key string, idle time.Duration) {
-	for i, c := range ePool {
+func (s *Store) pushToEPool(key string, idle time.Duration) {
+	for i, c := range s.ePool {
 		if c.key == key {
-			ePool[i].idle = idle
-			sortEPool()
+			s.ePool[i].idle = idle
+			s.sortEPool()
 			return
 		}
 	}
-	ePool = append(ePool, evictionCandidate{key: key, idle: idle})
-	sortEPool()
-	if len(ePool) > EpoolMaxSize {
-		ePool = ePool[:EpoolMaxSize]
+	s.ePool = append(s.ePool, evictionCandidate{key: key, idle: idle})
+	s.sortEPool()
+	if len(s.ePool) > EpoolMaxSize {
+		s.ePool = s.ePool[:EpoolMaxSize]
 	}
 }
 
-func evictSampledLRU() {
-	populateEPool()
-	remaining := victimCount()
-	for remaining > 0 && len(ePool) > 0 {
-		victim := ePool[0]
-		ePool = ePool[1:]
-		deleteEvicted(victim.key)
+func (s *Store) evictSampledLRU() {
+	s.populateEPool()
+	remaining := s.victimCount()
+	for remaining > 0 && len(s.ePool) > 0 {
+		victim := s.ePool[0]
+		s.ePool = s.ePool[1:]
+		s.deleteEvicted(victim.key)
 		remaining--
 	}
 }
 
-func evictExactLRU() {
-	remaining := victimCount()
+func (s *Store) evictExactLRU() {
+	remaining := s.victimCount()
 	for remaining > 0 {
-		victim, ok := lruVictim()
+		victim, ok := s.lruVictim()
 		if !ok {
 			break
 		}
-		deleteEvicted(victim)
+		s.deleteEvicted(victim)
 		remaining--
 	}
 }

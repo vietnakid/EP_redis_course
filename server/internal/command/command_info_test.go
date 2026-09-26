@@ -11,12 +11,12 @@ import (
 )
 
 func TestInfoReportsKeyspaceAndEviction(t *testing.T) {
-	origMax, origRatio, origPolicy := datastructure.MaxKeyNumber, datastructure.EvictionRatio, datastructure.ActiveEvictionPolicy
+	origMax, origPolicy := testStore.MaxKeyNumber, testStore.ActiveEvictionPolicy
 	t.Cleanup(func() {
-		datastructure.MaxKeyNumber, datastructure.EvictionRatio, datastructure.ActiveEvictionPolicy = origMax, origRatio, origPolicy
+		testStore.MaxKeyNumber, testStore.ActiveEvictionPolicy = origMax, origPolicy
 	})
-	datastructure.MaxKeyNumber = 50
-	datastructure.ActiveEvictionPolicy = datastructure.EvictionPolicyRandom
+	testStore.MaxKeyNumber = 50
+	testStore.ActiveEvictionPolicy = datastructure.EvictionPolicyRandom
 
 	handle(t, "SET TestInfo:a 1")
 	handle(t, "SET TestInfo:b 2")
