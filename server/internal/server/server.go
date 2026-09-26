@@ -9,12 +9,14 @@ import (
 	"log"
 	"net"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
 
 	"redis_k2/server/internal/datastructure"
+	"redis_k2/server/internal/protocol"
 	"redis_k2/server/io_multiplexing"
 )
 
@@ -44,11 +46,16 @@ type Server struct {
 	// Worker gets its own).
 	store *datastructure.Store
 
+	// simulateCPUWork artificially slows down GET, purely for the
+	// I/O-bound vs CPU-bound benchmark comparison in BENCHMARK.md - see
+	// -simulate-cpu-work in main.go. Zero (the default) is a no-op.
+	simulateCPUWork time.Duration
+
 	closed atomic.Bool
 	once   sync.Once
 }
 
-func New(addr string) (*Server, error) {
+func New(addr string, simulateCPUWork time.Duration) (*Server, error) {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return nil, fmt.Errorf("listen: %w", err)
@@ -72,13 +79,14 @@ func New(addr string) (*Server, error) {
 	}
 
 	return &Server{
-		listenerFile: listenerFile,
-		listenerFd:   serverFd,
-		mp:           mp,
-		pending:      make(map[int][]byte),
-		connFds:      make(map[int]struct{}),
-		remoteAddr:   make(map[int]string),
-		store:        datastructure.NewStore(),
+		listenerFile:    listenerFile,
+		listenerFd:      serverFd,
+		mp:              mp,
+		pending:         make(map[int][]byte),
+		connFds:         make(map[int]struct{}),
+		remoteAddr:      make(map[int]string),
+		store:           datastructure.NewStore(),
+		simulateCPUWork: simulateCPUWork,
 	}, nil
 }
 
@@ -154,6 +162,15 @@ func (s *Server) acceptConn() {
 	s.connFds[connFd] = struct{}{}
 	s.remoteAddr[connFd] = addr
 	log.Printf("accepted fd=%d from %s", connFd, addr)
+}
+
+// simulateCPUWorkOnGet artificially slows down GET, shared by both engines
+// so an I/O-bound vs CPU-bound comparison (server/BENCHMARK.md) is applying
+// the exact same load either way. Zero duration is a no-op.
+func simulateCPUWorkOnGet(cmd protocol.Command, d time.Duration) {
+	if d > 0 && strings.EqualFold(cmd.Name, "GET") {
+		time.Sleep(d)
+	}
 }
 
 // sockaddrString formats a syscall.Sockaddr as "ip:port" for logging. A

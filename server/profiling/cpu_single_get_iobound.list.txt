@@ -1,0 +1,40 @@
+Total: 3.75s
+ROUTINE ======================== redis_k2/server/internal/server.(*Server).handleReadable in /Users/vietnguyen/EngineerPro/Redis_K2/server/internal/server/conn.go
+         0      3.52s (flat, cum) 93.87% of Total
+         .          .     16:func (s *Server) handleReadable(connFd int) {
+         .          .     17:	buf := make([]byte, 4096)
+         .      1.56s     18:	n, err := syscall.Read(connFd, buf)
+         .          .     19:	if err != nil || n == 0 {
+         .          .     20:		if err != nil && err != io.EOF {
+         .          .     21:			log.Println("read error:", err)
+         .          .     22:		}
+         .          .     23:		s.closeConn(connFd)
+         .          .     24:		return
+         .          .     25:	}
+         .          .     26:
+         .          .     27:	data := append(s.pending[connFd], buf[:n]...)
+         .          .     28:	for {
+         .          .     29:		cmd, consumed, err := protocol.ParseCommand(data)
+         .          .     30:		if err == protocol.ErrIncomplete {
+         .          .     31:			break
+         .          .     32:		}
+         .          .     33:		if err != nil {
+         .          .     34:			log.Println("protocol error:", err)
+         .          .     35:			s.closeConn(connFd)
+         .          .     36:			return
+         .          .     37:		}
+         .          .     38:		data = data[consumed:]
+         .          .     39:		if cmd.Name == "" {
+         .          .     40:			continue
+         .          .     41:		}
+         .          .     42:
+         .          .     43:		// handle that request
+         .          .     44:		simulateCPUWorkOnGet(cmd, s.simulateCPUWork)
+         .       10ms     45:		reply := command.Handle(s.store, cmd)
+         .          .     46:
+         .      1.95s     47:		if _, err := syscall.Write(connFd, reply); err != nil {
+         .          .     48:			log.Println("write error:", err)
+         .          .     49:			s.closeConn(connFd)
+         .          .     50:			return
+         .          .     51:		}
+         .          .     52:	}
