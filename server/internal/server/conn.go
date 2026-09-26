@@ -41,6 +41,7 @@ func (s *Server) handleReadable(connFd int) {
 		}
 
 		// handle that request
+		simulateCPUWorkOnGet(cmd, s.simulateCPUWork)
 		reply := command.Handle(s.store, cmd)
 
 		if _, err := syscall.Write(connFd, reply); err != nil {
