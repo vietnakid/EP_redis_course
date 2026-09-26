@@ -1,9 +1,8 @@
 // Package datastructure holds the data structures a Redis key's value can
 // be: a plain string, a SimpleSet, a SortedSet, a Bloom filter or a CMS.
-// Each lives in its own package-level map so the command package's
-// routing layer doesn't need to
-// touch storage internals - it looks a key up by kind, gets back the
-// structure, and calls methods on it.
+// Each lives in its own map on a *Store so the command package's routing
+// layer doesn't need to touch storage internals - it looks a key up by
+// kind, gets back the structure, and calls methods on it.
 package datastructure
 
 // Kind identifies which keyspace a key currently lives in. A
@@ -23,45 +22,45 @@ const (
 // KindOf reports which keyspace key currently lives in, transparently
 // treating an expired string as absent. KindNone means the key exists in
 // none of the stores.
-func KindOf(key string) Kind {
-	if _, ok := GetLiveString(key); ok {
+func (s *Store) KindOf(key string) Kind {
+	if _, ok := s.GetLiveString(key); ok {
 		return KindString
 	}
-	if _, ok := SetStore[key]; ok {
+	if _, ok := s.SetStore[key]; ok {
 		return KindSet
 	}
-	if _, ok := ZSetStore[key]; ok {
+	if _, ok := s.ZSetStore[key]; ok {
 		return KindZSet
 	}
-	if _, ok := BloomStore[key]; ok {
+	if _, ok := s.BloomStore[key]; ok {
 		return KindBloom
 	}
-	if _, ok := CMSStore[key]; ok {
+	if _, ok := s.CMSStore[key]; ok {
 		return KindCMS
 	}
 	return KindNone
 }
 
 // Exists reports whether key has a live value in any keyspace.
-func Exists(key string) bool {
-	return KindOf(key) != KindNone
+func (s *Store) Exists(key string) bool {
+	return s.KindOf(key) != KindNone
 }
 
 // Delete removes key from whichever keyspace holds it. It reports whether
 // the key existed (and was therefore removed).
-func Delete(key string) bool {
-	switch KindOf(key) {
+func (s *Store) Delete(key string) bool {
+	switch s.KindOf(key) {
 	case KindString:
-		delete(StringStore, key)
-		lruRemove(key)
+		delete(s.StringStore, key)
+		s.lruRemove(key)
 	case KindSet:
-		delete(SetStore, key)
+		delete(s.SetStore, key)
 	case KindZSet:
-		delete(ZSetStore, key)
+		delete(s.ZSetStore, key)
 	case KindBloom:
-		delete(BloomStore, key)
+		delete(s.BloomStore, key)
 	case KindCMS:
-		delete(CMSStore, key)
+		delete(s.CMSStore, key)
 	default:
 		return false
 	}
@@ -72,21 +71,21 @@ func Delete(key string) bool {
 // commands like SET always overwrite whatever type a key held before -
 // this is what makes that safe: a key can't simultaneously be a string and
 // a stale set left behind by an earlier SADD.
-func ReplaceKind(key string, keep Kind) {
+func (s *Store) ReplaceKind(key string, keep Kind) {
 	if keep != KindString {
-		delete(StringStore, key)
-		lruRemove(key)
+		delete(s.StringStore, key)
+		s.lruRemove(key)
 	}
 	if keep != KindSet {
-		delete(SetStore, key)
+		delete(s.SetStore, key)
 	}
 	if keep != KindZSet {
-		delete(ZSetStore, key)
+		delete(s.ZSetStore, key)
 	}
 	if keep != KindBloom {
-		delete(BloomStore, key)
+		delete(s.BloomStore, key)
 	}
 	if keep != KindCMS {
-		delete(CMSStore, key)
+		delete(s.CMSStore, key)
 	}
 }

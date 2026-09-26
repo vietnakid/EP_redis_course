@@ -31,11 +31,6 @@ const (
 	bloomSeed uint32 = 0x9747b28c
 )
 
-// BloomStore holds every key whose value is a Bloom filter. Like the other
-// stores in this package it is an unguarded map: only the event-loop
-// goroutine in main.go ever touches it.
-var BloomStore = make(map[string]*Bloom)
-
 // Bloom is one filter. bf is the bit array, packed 8 bits per byte -
 // []bool would work and be shorter, but it would spend a whole byte per
 // bit and throw away the 8x memory win that is the entire point of the

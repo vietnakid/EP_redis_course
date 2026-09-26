@@ -12,39 +12,33 @@ type StringEntry struct {
 	LastAccessTime time.Time
 }
 
-// StringStore holds every key whose value is a plain string. It is a
-// plain package-level map, not wrapped in a mutex: every store in this
-// package is only ever touched from the single event-loop goroutine in
-// main.go, so a lock would protect against nothing.
-var StringStore = make(map[string]StringEntry)
-
 // SetString is the only path that writes StringStore: it triggers eviction
 // first if the store is full and key is new, then stamps LastAccessTime and
 // records the write in the exact-LRU list, regardless of which policy is
 // currently active - so switching ActiveEvictionPolicy at runtime doesn't
 // need a rebuild of that list.
-func SetString(key string, e StringEntry) {
-	maybeEvict(key)
+func (s *Store) SetString(key string, e StringEntry) {
+	s.maybeEvict(key)
 	e.LastAccessTime = time.Now()
-	StringStore[key] = e
-	lruTouch(key)
+	s.StringStore[key] = e
+	s.lruTouch(key)
 }
 
 // GetLiveString returns the entry for key, transparently dropping (and
 // reporting absent) anything that has already expired.
-func GetLiveString(key string) (StringEntry, bool) {
-	e, ok := StringStore[key]
+func (s *Store) GetLiveString(key string) (StringEntry, bool) {
+	e, ok := s.StringStore[key]
 	if !ok {
 		return StringEntry{}, false
 	}
 	if e.HasExpiry && !time.Now().Before(e.ExpireAt) {
-		delete(StringStore, key)
-		lruRemove(key)
+		delete(s.StringStore, key)
+		s.lruRemove(key)
 		return StringEntry{}, false
 	}
 	e.LastAccessTime = time.Now()
-	StringStore[key] = e
-	lruTouch(key)
+	s.StringStore[key] = e
+	s.lruTouch(key)
 	return e, true
 }
 
@@ -60,9 +54,10 @@ const (
 
 // ActiveExpireCycle proactively evicts keys whose TTL has already elapsed,
 // so an idle key doesn't sit in memory forever just because nothing ever
-// GETs or TTLs it again. main.go's event loop calls this directly between
-// multiplexer.Wait() calls - same goroutine as every command, no extra
-// locking model, no background sweeper to reason about.
+// GETs or TTLs it again. The event loop that owns this Store calls this
+// directly between multiplexer.Wait() calls - same goroutine as every
+// command against this Store, no extra locking model, no background
+// sweeper to reason about.
 //
 // Cost per call is bounded regardless of total key count: each pass
 // samples at most activeExpireSampleSize keys (Go's map iteration order is
@@ -71,18 +66,18 @@ const (
 // activeExpireThreshold of that sample was expired, there's likely more
 // backlog, so it immediately samples again; otherwise it stops until the
 // next scheduled tick.
-func ActiveExpireCycle() {
+func (s *Store) ActiveExpireCycle() {
 	now := time.Now()
 	for {
 		sampled, expired := 0, 0
-		for key, e := range StringStore {
+		for key, e := range s.StringStore {
 			if sampled >= activeExpireSampleSize {
 				break
 			}
 			sampled++
 			if e.HasExpiry && !now.Before(e.ExpireAt) {
-				delete(StringStore, key)
-				lruRemove(key)
+				delete(s.StringStore, key)
+				s.lruRemove(key)
 				expired++
 			}
 		}

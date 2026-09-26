@@ -40,6 +40,3 @@ func NewSortedSet() SortedSet {
 	}
 	return newSkiplistZSet()
 }
-
-// ZSetStore holds every key whose value is a SortedSet.
-var ZSetStore = make(map[string]SortedSet)

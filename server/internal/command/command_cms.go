@@ -1,6 +1,6 @@
 // command_cms.go handles the Count-Min Sketch keyspace: CMS.INITBYDIM,
 // CMS.INITBYPROB, CMS.INCRBY, CMS.QUERY, CMS.INFO. Each key routes
-// through datastructure.CMSStore. CMS.MERGE is out of scope.
+// through store.CMSStore. CMS.MERGE is out of scope.
 //
 // Note the deliberate asymmetry with BF.MADD: a sketch is never created
 // implicitly. Bloom's defaults are a reasonable guess, but a sketch's
@@ -17,20 +17,20 @@ import (
 
 // initCMS is the shared tail of INITBYDIM and INITBYPROB: refuse an
 // existing key, otherwise store a fresh sketch of the given dimensions.
-func initCMS(key string, width uint32, depth uint32) []byte {
-	if reply := checkType(key, datastructure.KindCMS); reply != nil {
+func initCMS(store *datastructure.Store, key string, width uint32, depth uint32) []byte {
+	if reply := checkType(store, key, datastructure.KindCMS); reply != nil {
 		return reply
 	}
-	if _, exists := datastructure.CMSStore[key]; exists {
+	if _, exists := store.CMSStore[key]; exists {
 		return protocol.EncodeError("CMS: key already exists")
 	}
-	datastructure.CMSStore[key] = datastructure.CreateCMS(width, depth)
+	store.CMSStore[key] = datastructure.CreateCMS(width, depth)
 	return protocol.EncodeSimpleString("OK")
 }
 
 // handleCMSInitByDim implements CMS.INITBYDIM key width depth: dimensions
 // stated directly, for when you already know the memory you want to spend.
-func handleCMSInitByDim(args []string) []byte {
+func handleCMSInitByDim(store *datastructure.Store, args []string) []byte {
 	if len(args) != 3 {
 		return protocol.EncodeError("CMS: wrong number of arguments for 'cms.initbydim' command")
 	}
@@ -42,12 +42,12 @@ func handleCMSInitByDim(args []string) []byte {
 	if err != nil || depth == 0 {
 		return protocol.EncodeError("CMS: invalid depth")
 	}
-	return initCMS(args[0], uint32(width), uint32(depth))
+	return initCMS(store, args[0], uint32(width), uint32(depth))
 }
 
 // handleCMSInitByProb implements CMS.INITBYPROB key error probability:
 // state the error budget and let CalcCMSDim derive width and depth.
-func handleCMSInitByProb(args []string) []byte {
+func handleCMSInitByProb(store *datastructure.Store, args []string) []byte {
 	if len(args) != 3 {
 		return protocol.EncodeError("CMS: wrong number of arguments for 'cms.initbyprob' command")
 	}
@@ -60,19 +60,19 @@ func handleCMSInitByProb(args []string) []byte {
 		return protocol.EncodeError("CMS: invalid prob value")
 	}
 	width, depth := datastructure.CalcCMSDim(errRate, errProb)
-	return initCMS(args[0], width, depth)
+	return initCMS(store, args[0], width, depth)
 }
 
 // handleCMSIncrBy implements CMS.INCRBY key item incr [item incr ...],
 // replying with one new estimate per item. Every pair is parsed before
 // anything is incremented, so a bad increment halfway through doesn't
 // leave the sketch half-updated - and a sketch can't be un-incremented.
-func handleCMSIncrBy(args []string) []byte {
+func handleCMSIncrBy(store *datastructure.Store, args []string) []byte {
 	if len(args) < 3 || len(args)%2 != 1 {
 		return protocol.EncodeError("CMS: wrong number of arguments for 'cms.incrby' command")
 	}
 	key := args[0]
-	if reply := checkType(key, datastructure.KindCMS); reply != nil {
+	if reply := checkType(store, key, datastructure.KindCMS); reply != nil {
 		return reply
 	}
 
@@ -89,7 +89,7 @@ func handleCMSIncrBy(args []string) []byte {
 		pairs = append(pairs, pair{item: args[i], incr: uint32(incr)})
 	}
 
-	cms, exists := datastructure.CMSStore[key]
+	cms, exists := store.CMSStore[key]
 	if !exists {
 		return protocol.EncodeError("CMS: key does not exist")
 	}
@@ -102,15 +102,15 @@ func handleCMSIncrBy(args []string) []byte {
 
 // handleCMSQuery implements CMS.QUERY key item [item ...]: the estimated
 // count of each item, in the order asked.
-func handleCMSQuery(args []string) []byte {
+func handleCMSQuery(store *datastructure.Store, args []string) []byte {
 	if len(args) < 2 {
 		return protocol.EncodeError("CMS: wrong number of arguments for 'cms.query' command")
 	}
 	key := args[0]
-	if reply := checkType(key, datastructure.KindCMS); reply != nil {
+	if reply := checkType(store, key, datastructure.KindCMS); reply != nil {
 		return reply
 	}
-	cms, exists := datastructure.CMSStore[key]
+	cms, exists := store.CMSStore[key]
 	if !exists {
 		return protocol.EncodeError("CMS: key does not exist")
 	}
@@ -125,15 +125,15 @@ func handleCMSQuery(args []string) []byte {
 // field/value array real Redis uses: width W depth D count C. count is
 // the total of every increment applied, i.e. the size of the stream the
 // sketch has seen.
-func handleCMSInfo(args []string) []byte {
+func handleCMSInfo(store *datastructure.Store, args []string) []byte {
 	if len(args) != 1 {
 		return protocol.EncodeError("CMS: wrong number of arguments for 'cms.info' command")
 	}
 	key := args[0]
-	if reply := checkType(key, datastructure.KindCMS); reply != nil {
+	if reply := checkType(store, key, datastructure.KindCMS); reply != nil {
 		return reply
 	}
-	cms, exists := datastructure.CMSStore[key]
+	cms, exists := store.CMSStore[key]
 	if !exists {
 		return protocol.EncodeError("CMS: key does not exist")
 	}

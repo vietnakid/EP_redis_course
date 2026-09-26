@@ -1,6 +1,6 @@
 // command_sortedset.go handles the sorted-set keyspace: ZADD, ZSCORE,
-// ZRANK. Each key routes through datastructure.ZSetStore, created lazily
-// on first ZADD using whichever implementation ZSET_IMPL selects.
+// ZRANK. Each key routes through store.ZSetStore, created lazily on first
+// ZADD using whichever implementation ZSET_IMPL selects.
 package command
 
 import (
@@ -14,12 +14,12 @@ import (
 // cmd.Args - args[0] is the key, followed by one or more (score, member)
 // pairs. Returns how many members were newly added (a member that already
 // existed just gets its score updated, and doesn't count).
-func handleZAdd(args []string) []byte {
+func handleZAdd(store *datastructure.Store, args []string) []byte {
 	if len(args) < 3 || len(args)%2 != 1 {
 		return protocol.EncodeError("ERR wrong number of arguments for 'zadd' command")
 	}
 	key := args[0]
-	if reply := checkType(key, datastructure.KindZSet); reply != nil {
+	if reply := checkType(store, key, datastructure.KindZSet); reply != nil {
 		return reply
 	}
 
@@ -38,10 +38,10 @@ func handleZAdd(args []string) []byte {
 		pairs = append(pairs, pair{score: score, member: args[i+1]})
 	}
 
-	zset, exists := datastructure.ZSetStore[key]
+	zset, exists := store.ZSetStore[key]
 	if !exists {
 		zset = datastructure.NewSortedSet()
-		datastructure.ZSetStore[key] = zset
+		store.ZSetStore[key] = zset
 	}
 	var added int64
 	for _, p := range pairs {
@@ -52,15 +52,15 @@ func handleZAdd(args []string) []byte {
 
 // handleZScore implements ZSCORE key member: member's score as a bulk
 // string, or a nil reply if the key or member doesn't exist.
-func handleZScore(args []string) []byte {
+func handleZScore(store *datastructure.Store, args []string) []byte {
 	if len(args) != 2 {
 		return protocol.EncodeError("ERR wrong number of arguments for 'zscore' command")
 	}
 	key, member := args[0], args[1]
-	if reply := checkType(key, datastructure.KindZSet); reply != nil {
+	if reply := checkType(store, key, datastructure.KindZSet); reply != nil {
 		return reply
 	}
-	zset, exists := datastructure.ZSetStore[key]
+	zset, exists := store.ZSetStore[key]
 	if !exists {
 		return protocol.NilReply
 	}
@@ -74,15 +74,15 @@ func handleZScore(args []string) []byte {
 // handleZRank implements ZRANK key member: member's 0-based rank with
 // scores ordered low to high, or a nil reply if the key or member doesn't
 // exist.
-func handleZRank(args []string) []byte {
+func handleZRank(store *datastructure.Store, args []string) []byte {
 	if len(args) != 2 {
 		return protocol.EncodeError("ERR wrong number of arguments for 'zrank' command")
 	}
 	key, member := args[0], args[1]
-	if reply := checkType(key, datastructure.KindZSet); reply != nil {
+	if reply := checkType(store, key, datastructure.KindZSet); reply != nil {
 		return reply
 	}
-	zset, exists := datastructure.ZSetStore[key]
+	zset, exists := store.ZSetStore[key]
 	if !exists {
 		return protocol.NilReply
 	}

@@ -52,6 +52,3 @@ func (s *SimpleSet) Members() []string {
 	}
 	return out
 }
-
-// SetStore holds every key whose value is a SimpleSet.
-var SetStore = make(map[string]*SimpleSet)
