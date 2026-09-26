@@ -1,0 +1,56 @@
+Total: 13.30s
+ROUTINE ======================== redis_k2/server/internal/server.(*IOHandler).handleReadable in /Users/vietnguyen/EngineerPro/Redis_K2/server/internal/server/io_handler.go
+         0     11.48s (flat, cum) 86.32% of Total
+         .          .    119:func (h *IOHandler) handleReadable(connFd int) {
+         .          .    120:	buf := make([]byte, 4096)
+         .      4.73s    121:	n, err := syscall.Read(connFd, buf)
+         .          .    122:	if err != nil || n == 0 {
+         .          .    123:		if err != nil && err != io.EOF {
+         .          .    124:			log.Println("io handler", h.id, "read error:", err)
+         .          .    125:		}
+         .          .    126:		h.closeConn(connFd)
+         .          .    127:		return
+         .          .    128:	}
+         .          .    129:
+         .       10ms    130:	data := append(h.pending[connFd], buf[:n]...)
+         .          .    131:	for {
+         .       10ms    132:		cmd, consumed, err := protocol.ParseCommand(data)
+         .          .    133:		if err == protocol.ErrIncomplete {
+         .          .    134:			break
+         .          .    135:		}
+         .          .    136:		if err != nil {
+         .          .    137:			log.Println("io handler", h.id, "protocol error:", err)
+         .          .    138:			h.closeConn(connFd)
+         .          .    139:			return
+         .          .    140:		}
+         .          .    141:		data = data[consumed:]
+         .          .    142:		if cmd.Name == "" {
+         .          .    143:			continue
+         .          .    144:		}
+         .          .    145:
+         .       80ms    146:		reply := h.dispatch(cmd)
+         .          .    147:
+         .      6.65s    148:		if _, err := syscall.Write(connFd, reply); err != nil {
+         .          .    149:			log.Println("io handler", h.id, "write error:", err)
+         .          .    150:			h.closeConn(connFd)
+         .          .    151:			return
+         .          .    152:		}
+         .          .    153:	}
+Total: 13.30s
+ROUTINE ======================== redis_k2/server/internal/server.(*IOHandler).dispatch in /Users/vietnguyen/EngineerPro/Redis_K2/server/internal/server/io_handler.go
+      10ms       80ms (flat, cum)   0.6% of Total
+         .          .    179:func (h *IOHandler) dispatch(cmd protocol.Command) []byte {
+         .          .    180:	var workerID int
+         .          .    181:	if len(cmd.Args) > 0 {
+         .          .    182:		workerID = getPartitionID(cmd.Args[0], len(h.workers))
+         .          .    183:	} else {
+         .          .    184:		workerID = rand.Intn(len(h.workers))
+         .          .    185:	}
+         .       20ms    186:	replyCh := make(chan []byte, 1)
+         .       50ms    187:	h.workers[workerID].TaskCh <- &Task{Cmd: cmd, ReplyCh: replyCh}
+      10ms       10ms    188:	return <-replyCh
+         .          .    189:}
+         .          .    190:
+         .          .    191:func (h *IOHandler) closeConn(connFd int) {
+         .          .    192:	log.Printf("io handler %d closing fd=%d addr=%s", h.id, connFd, h.remoteAddr[connFd])
+         .          .    193:	_ = syscall.Close(connFd)

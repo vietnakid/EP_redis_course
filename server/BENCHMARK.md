@@ -28,13 +28,18 @@ measures pure event-loop/dispatch overhead.
 | `-engine=single`                 | 204,666   | 221,976   |
 | `-engine=shared-nothing -listeners=1` | 193,911   | 181,291   |
 
-Shared-nothing is *slower* here, not faster - exactly what the lecture's
-own profiling predicts (slides 29-31): this workload is I/O-bound, so
-adding worker goroutines doesn't add throughput, it only adds the cost of
-hashing the key, handing the command to a Worker over a channel, and
-waiting on a reply channel for something a single goroutine could have
-executed inline. Shared-nothing has nothing to parallelize yet when the
-bottleneck is syscalls, not CPU.
+Shared-nothing is *slower* here, not faster - matching the lecture's own
+conclusion (slides 29-31) that an I/O-bound workload doesn't benefit from
+extra worker goroutines, though not for the reason first assumed here. CPU
+profiling (see `profiling/README.md`) shows the channel hop to a Worker and
+back costs under 1% of CPU time - negligible. The real cost is that
+`syscall.Read`/`syscall.Write` themselves get ~5x more expensive per request
+under shared-nothing (~9.2µs CPU/request vs ~1.9µs single-threaded), because
+4 `IOHandler` goroutines are now issuing those syscalls concurrently against
+the same loopback network stack, and the kernel-side contention that creates
+outweighs whatever the extra goroutines could parallelize. There's nothing
+to parallelize yet when the bottleneck is syscalls, not CPU - see
+`profiling/README.md` for the actual measurement.
 
 ## 2. CPU-bound: single vs shared-nothing
 

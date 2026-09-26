@@ -1,0 +1,23 @@
+File: redis_k2_srv
+Type: cpu
+Time: 2026-09-26 16:46:42 +07
+Duration: 8.02s, Total samples = 13.30s (165.74%)
+Showing nodes accounting for 13.02s, 97.89% of 13.30s total
+Dropped 62 nodes (cum <= 0.07s)
+Showing top 15 nodes out of 42
+      flat  flat%   sum%        cum   cum%
+    11.97s 90.00% 90.00%     11.97s 90.00%  syscall.rawsyscalln
+     0.41s  3.08% 93.08%      0.41s  3.08%  runtime.pthread_cond_wait
+     0.37s  2.78% 95.86%      0.37s  2.78%  runtime.pthread_cond_signal
+     0.19s  1.43% 97.29%      0.19s  1.43%  runtime.usleep
+     0.04s   0.3% 97.59%      0.10s  0.75%  runtime.scanObject
+     0.02s  0.15% 97.74%      0.17s  1.28%  runtime.gcDrain
+     0.01s 0.075% 97.82%     12.08s 90.83%  redis_k2/server/internal/server.(*IOHandler).Run
+     0.01s 0.075% 97.89%      0.08s   0.6%  redis_k2/server/internal/server.(*IOHandler).dispatch
+         0     0% 97.89%     11.48s 86.32%  redis_k2/server/internal/server.(*IOHandler).handleReadable
+         0     0% 97.89%     12.08s 90.83%  redis_k2/server/internal/server.(*SharedNothingServer).Run.func1
+         0     0% 97.89%      0.59s  4.44%  redis_k2/server/io_multiplexing.(*KQueue).Wait
+         0     0% 97.89%      0.61s  4.59%  runtime.findRunnable
+         0     0% 97.89%      0.16s  1.20%  runtime.gcBgMarkWorker
+         0     0% 97.89%      0.17s  1.28%  runtime.gcBgMarkWorker.func2
+         0     0% 97.89%      0.07s  0.53%  runtime.gcDrainMarkWorkerDedicated (inline)
